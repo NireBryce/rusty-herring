@@ -34,6 +34,7 @@ fn extract_description(path: &str) -> Result<Option<String>, io::Error> {
             continue;
         }
 
+        
 
         // Check for different comment formats
         let description = if let Some(desc) = trimmed.strip_prefix('#') {
