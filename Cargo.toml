@@ -3,4 +3,8 @@ name = "rusty-herring"
 version = "0.1.0"
 edition = "2024"
 
+# external libraries
 [dependencies]
+ratatui = "0.26" # ratatui is a TUI framework
+crossterm = "0.27" # crossterm is a cross-platform terminal manipulation library
+

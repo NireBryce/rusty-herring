@@ -3,6 +3,18 @@ use std::fs;
 use std::io::{self, BufRead};
 use std::os::unix::fs::PermissionsExt; // Unix-specific permissions
 
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
+    Terminal,
+};
+use crossterm::{
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    execute,
+};
+
+
 #[derive(Debug)]
 struct Script {
     path: String,
@@ -101,6 +113,7 @@ fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
                 name,
                 description,
             };
+
             scripts.push(script)
         }
     }
@@ -118,18 +131,61 @@ fn main() -> Result<(), io::Error> {
 
     let directory = &args[1];
     let scripts = scan_directory(directory)?;
-    
-    println!("found {} executable scripts:\n", scripts.len());
-    for script in &scripts {
-        println!{"{}", script.name};
-        if let Some(desc) = &script.description {
-            println!("  {}", desc);
-        } else {
-            println!("  (no description)");
-        }
-        println!("  Path: {}", script.path);
-        println!();
-    }
+
+
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+
+    // draw UI
+    terminal.draw(|f| {
+        // get size of terminal
+        let size = f.size();
+
+        // create a layout
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+            ])
+            .split(size);
+
+        // Create title widget
+        let title = Paragraph::new(format!("Script runner - {} scripts found", scripts.len()))
+            .block(Block::default().borders(Borders::ALL).title("Scripts"));
+        f.render_widget(title, chunks[0]);
+
+        // Convert scripts to ListItems
+        let items: Vec<ListItem> = scripts
+            .iter()
+            .map(|script| {
+                let mut lines = vec![script.name.clone()];
+                if let Some(desc) = &script.description {
+                    lines.push(format!("  {}", desc));
+                }
+                ListItem::new(lines.join("\n"))
+            })
+            .collect();
+
+        // create list widget
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("Available Scripts"));
+        f.render_widget(list, chunks[1]);
+    })?;
+
+    // Wait for user to press enter before exiting
+    use std::io::Read;
+    let mut buffer = [0; 1];
+    io::stdin().read(&mut buffer)?;
+
+    //cleanup terminal
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
     Ok(())
 }
