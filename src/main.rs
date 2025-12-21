@@ -3,17 +3,18 @@ use std::fs;
 use std::io::{self, BufRead};
 use std::os::unix::fs::PermissionsExt; // Unix-specific permissions
 
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Terminal,
 };
-use crossterm::{
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    execute,
-};
-
 
 #[derive(Debug)]
 struct Script {
@@ -22,12 +23,50 @@ struct Script {
     description: Option<String>,
 }
 
-// Function to extract description from a script file
-// Takes a path as &str (borrowed string slice)
-// returns Result<Option<String>, io::Error>
-//  - Ok(Some(description)) if we found a description
-//  - Ok(None) if no description
-//  - Err(error) if we couldn't read the file
+struct App {
+    scripts: Vec<Script>,
+    selected_index: usize, // which script is selected
+    should_quit: bool,     // exit flag
+}
+
+impl App {
+    fn new(scripts: Vec<Script>) -> App {
+        App {
+            scripts,
+            selected_index: 0,
+            should_quit: false,
+        }
+    }
+
+    fn next(&mut self) {
+        // move selection down
+        if self.selected_index < self.scripts.len() - 1 {
+            self.selected_index += 1;
+        }
+    }
+
+    fn previous(&mut self) {
+        // move selection up
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+
+    fn quit(&mut self) {
+        self.should_quit = true;
+    }
+}
+
+// guard to ensure terminal cleanup
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
+}
+
 fn extract_description(path: &str) -> Result<Option<String>, io::Error> {
     let file = fs::File::open(path)?;
     let reader = io::BufReader::new(file);
@@ -36,53 +75,37 @@ fn extract_description(path: &str) -> Result<Option<String>, io::Error> {
         let line = line_result?;
         let trimmed = line.trim();
 
-        // skip empty lines
         if trimmed.is_empty() {
             continue;
         }
-
-        // skip shebang lines (#!/bom/bash, etc.)
         if trimmed.starts_with("#!") {
             continue;
         }
 
-        
-
-        // Check for different comment formats
         let description = if let Some(desc) = trimmed.strip_prefix('#') {
             Some(desc)
         } else if let Some(desc) = trimmed.strip_prefix("//") {
-            //found C++ style comment
-            return Ok(Some(desc.trim().to_string()));
+            Some(desc)
         } else if let Some(desc) = trimmed.strip_prefix("--") {
-            // found lua-style comment
-            return Ok(Some(desc.trim().to_string()));
+            Some(desc)
         } else {
-            // non comment line, stop looking
             None
         };
 
-        if let Some(desc) = description { 
+        if let Some(desc) = description {
             let cleaned = desc.trim().to_string();
             if !cleaned.is_empty() {
                 return Ok(Some(cleaned));
             }
-            // if empty, keep looking
             continue;
         }
-        
-        // hit non-comment line
-        break;
 
+        break;
     }
 
-    // no description found
     Ok(None)
 }
 
-// Scan directory for executable scripts
-// takes path as &str
-// returns a Rersult containing Vec<Script> or an error
 fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
     let entries = fs::read_dir(directory)?;
     let mut scripts: Vec<Script> = Vec::new();
@@ -104,8 +127,9 @@ fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
+
             let path_str = path.to_str().unwrap_or("").to_string();
+
             let description = extract_description(&path_str).unwrap_or(None);
 
             let script = Script {
@@ -114,12 +138,119 @@ fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
                 description,
             };
 
-            scripts.push(script)
+            scripts.push(script);
         }
     }
     Ok(scripts)
 }
 
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    mut app: App,
+) -> Result<(), io::Error> {
+    loop {
+        // draw the UI
+        terminal.draw(|f| {
+            let size = f.size();
+            
+            let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ])
+            .split(size);
+        let title_text = format!(
+            "script Runner - {} scripts",
+            app.scripts.len()
+        );
+
+        let title = Paragraph::new(title_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Scripts")
+                    .border_style(
+                        Style::default().fg(Color::Cyan)
+                    )
+            );
+        f.render_widget(title, chunks[0]);
+
+        // script list
+
+        let items: Vec<ListItem> = app.scripts
+            .iter()
+            .enumerate()
+            .map(|(i, script)|{
+                let name_line = if i == app.selected_index {
+                    format !("> {", script.name)
+                } else {
+                    format!("  {}", script.name)
+                };
+
+                let lines = if let Some(desc) = &script.description {
+                    vec![name_line, format!("   {}", desc)]
+                } else {
+                    vec![name_line]
+                };
+
+                let style = if i == app.selected_index {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                
+                ListItem::new(lines.join("\n")).style(style)
+            }).collect();
+
+        let list = List::new(items)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Available Scripts")
+                        .border_style(
+                            Style::default().fg(Color::Cyan)
+                        )
+                );
+            f.render_widget(list, chunks[1]);
+        
+        let footer = Paragraph::new("Use arrow keys to navigate and press enter to run a script")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+            )
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(footer, chunks[2]); 
+    })?;
+    //handle input
+    if event::poll(std::time::Duration::from_millis(100))? {}
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => {
+                    app.quit();
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.next();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.previous();
+                }
+                KeyCode::Enter => {
+                    // for now, quit, eventually, execute
+                    app.quit();
+                }
+                _ => {}
+            }
+        }
+
+        if app.should_quit{
+            break;
+        }
+    }
+    Ok(())
+}
 
 fn main() -> Result<(), io::Error> {
     let args: Vec<String> = env::args().collect();
@@ -132,60 +263,25 @@ fn main() -> Result<(), io::Error> {
     let directory = &args[1];
     let scripts = scan_directory(directory)?;
 
+    if scripts.is_empty() {
+        println!("No executable scripts found in {}", directory);
+        return Ok(());
+    }
 
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+
+    // Create guard for cleanup
+    let _guard = TerminalGuard;
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-
-    // draw UI
-    terminal.draw(|f| {
-        // get size of terminal
-        let size = f.size();
-
-        // create a layout
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(0),
-            ])
-            .split(size);
-
-        // Create title widget
-        let title = Paragraph::new(format!("Script runner - {} scripts found", scripts.len()))
-            .block(Block::default().borders(Borders::ALL).title("Scripts"));
-        f.render_widget(title, chunks[0]);
-
-        // Convert scripts to ListItems
-        let items: Vec<ListItem> = scripts
-            .iter()
-            .map(|script| {
-                let mut lines = vec![script.name.clone()];
-                if let Some(desc) = &script.description {
-                    lines.push(format!("  {}", desc));
-                }
-                ListItem::new(lines.join("\n"))
-            })
-            .collect();
-
-        // create list widget
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Available Scripts"));
-        f.render_widget(list, chunks[1]);
-    })?;
-
-    // Wait for user to press enter before exiting
-    use std::io::Read;
-    let mut buffer = [0; 1];
-    io::stdin().read(&mut buffer)?;
-
-    //cleanup terminal
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    // Create app and run
+    let app = App::new(scripts);
+    run_app(&mut terminal, app)?;
 
     Ok(())
 }

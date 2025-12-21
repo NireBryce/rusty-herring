@@ -30,5 +30,8 @@
         "editorBracketHighlight.foreground5": "#97c26c",
         "editorBracketHighlight.foreground6": "#abb2c0",
         "editorBracketHighlight.unexpectedBracket.foreground": "#de7842"
-    }
+    },
+    "linter.runOnTextChange": false,
+    "livePreview.autoRefreshPreview": "On Changes to Saved Files",
+    "editor.formatOnSave": true
 }
