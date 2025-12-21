@@ -541,34 +541,34 @@ fn run_app(
 
 fn main() -> Result<(), io::Error> {
     let args: Vec<String> = env::args().collect();
-
+    
     if args.len() < 2 {
         println!("Usage: {} <directory>", args[0]);
         return Ok(());
     }
-
+    
     let directory = &args[1];
     let scripts = scan_directory(directory)?;
-
+    
     if scripts.is_empty() {
-        println!("No executable scripts found in {}", directory);
+        println!(
+            "No executable scripts in {}",
+            directory
+        );
         return Ok(());
     }
-
-    // Setup terminal
+    
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
-
-    // Create guard for cleanup
+    
     let _guard = TerminalGuard;
-
+    
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
-    // Create app and run
+    
     let app = App::new(scripts);
     run_app(&mut terminal, app)?;
-
+    
     Ok(())
 }
