@@ -1,19 +1,19 @@
-use std::env;
-use std::fs;
-use std::io::{self, BufRead};
-use std::os::unix::fs::PermissionsExt; // Unix-specific permissions
-
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
 use ratatui::{
-    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
+    Terminal,
+};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal::{
+        disable_raw_mode,
+        enable_raw_mode,
+        EnterAlternateScreen,
+        LeaveAlternateScreen
+    },
+    execute,
 };
 
 #[derive(Debug)]
@@ -25,12 +25,10 @@ struct Script {
 
 struct App {
     scripts: Vec<Script>,
-    selected_index: usize, // which script is selected
-    should_quit: bool,     // exit flag
+    selected_index: usize,
+    should_quit: bool,
     viewing_output: bool,
     output_text: String,
-    output_scroll: usize,
-    showing_help: bool,
 }
 
 impl App {
@@ -65,7 +63,7 @@ impl App {
         };
         let title = { 
             Paragraph::new("Keyboard Shortcuts")
-            .block(
+             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title("Help")
@@ -241,6 +239,148 @@ fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
         }
     }
     Ok(scripts)
+}
+fn render_list_view(
+    f: &mut ratatui::Frame,
+    app: &App,
+) {
+    let size = f.size();
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
+        .split(size);
+    
+    let title_text = format!(
+        "Script Runner - {} scripts",
+        app.scripts.len()
+    );
+    let title = Paragraph::new(title_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Scripts")
+                .border_style(
+                    Style::default().fg(Color::Cyan)
+                )
+        );
+    f.render_widget(title, chunks[0]);
+    
+    let items: Vec<ListItem> = app.scripts
+        .iter()
+        .enumerate()
+        .map(|(i, script)| {
+            let prefix = if i == app.selected_index {
+                "▶"
+            } else {
+                " "
+            };
+            
+            let name_line = format!(
+                "{} {}",
+                prefix,
+                script.name
+            );
+            
+            let lines = if let Some(d) = &script.description {
+                vec![name_line, format!("    {}", d)]
+            } else {
+                vec![name_line]
+            };
+            
+            let style = if i == app.selected_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            
+            ListItem::new(lines.join("\n")).style(style)
+        })
+        .collect();
+    
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Available Scripts")
+                .border_style(
+                    Style::default().fg(Color::Cyan)
+                )
+        );
+    f.render_widget(list, chunks[1]);
+    
+    let footer = Paragraph::new(
+        "↑/↓: Navigate | Enter: Run | q: Quit"
+    )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(Color::Cyan)
+                )
+        )
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(footer, chunks[2]);
+}
+
+fn render_output_view(
+    f: &mut ratatui::Frame,
+    app: &App,
+) {
+    let size = f.size();
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
+        .split(size);
+    
+    let script_name = &app.scripts[app.selected_index].name;
+    let title = Paragraph::new(
+        format!("Running: {}", script_name)
+    )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Script Output")
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
+        );
+    f.render_widget(title, chunks[0]);
+    
+    let output = Paragraph::new(app.output_text.clone())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
+        )
+        .style(Style::default().fg(Color::White));
+    f.render_widget(output, chunks[1]);
+    
+    let footer = Paragraph::new(
+        "Press any key to go back"
+    )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
+        )
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(footer, chunks[2]);
 }
 
 fn run_app(
