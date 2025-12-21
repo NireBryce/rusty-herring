@@ -248,10 +248,41 @@ fn run_app(
             )
             .style(Style::default().fg(Color::Gray));
         f.render_widget(footer, chunks[2]); 
-    })?;
+        
+        })?;
+
     //handle input
-    if event::poll(std::time::Duration::from_millis(100))? {}
+    if event::poll(std::time::Duration::from_millis(100))? {
+        // In run_app, inside the input handling:
+
         if let Event::Key(key) = event::read()? {
+            if app.viewing_output {
+                // Calculate max scroll for bounds checking
+                let lines: Vec<&str> = app.output_text
+                    .lines()
+                    .collect();
+                let total = lines.len();
+                
+                // This is approximate, but good enough
+                let visible = 20;  
+
+                //  Calculate max scroll each time because the terminal might 
+                //    resize.  In a production app, we'd cache this, but for 
+                //    simplicity, just recalculate. 
+                let max_scroll = total.saturating_sub(visible);
+                
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        app.scroll_output_up();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        app.scroll_output_down(max_scroll);
+                    }
+                    _ => {
+                        app.back_to_list();
+                    }
+                }
+            }
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => {
                     app.quit();
@@ -295,7 +326,7 @@ fn render_output_view(
                 .border_style(Style::default().fg(Color::Green)
             )
         );
-    f.render_Widget(title, chunks[0]);
+    f.render_widget(title, chunks[0]);
     
     // Calculate how many lines we can show
     // -2 for the borders
