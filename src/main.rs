@@ -184,7 +184,7 @@ fn run_app(
             .enumerate()
             .map(|(i, script)|{
                 let name_line = if i == app.selected_index {
-                    format !("> {", script.name)
+                    format !("> {}", script.name)
                 } else {
                     format!("  {}", script.name)
                 };
