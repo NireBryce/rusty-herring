@@ -51,114 +51,108 @@ impl App {
             showing_help: false,
         }
     }
-
-    fn show_help(&mut self) {
-        self.showing_help = true;
-    }
-
-    fn hide_help(&mut self) {
-        self.showing_help = false;
-    }
-
-    fn render_help_view(f: &mut ratatui::Frame) {
-        let size = f.size();
-
-        let chunks = { 
-            Layout::default()
-                .direction(Direction::Vertical)
-                .Constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3),])
-                .split(size)
-        };
-        let title = { 
-            Paragraph::new("Keyboard Shortcuts")
-             .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Help")
-                    .border_style(
-                        Style::default().fg(Color::Yellow)
-                    )
-            )
-        };
-        f.render_widget(title, chunks[0]);
     
-        // Help content
-        let help_text = "\
-            Script List View:
-            ↑/k         - Move selection up
-            ↓/j         - Move selection down
-            Enter       - Run selected script
-            ?           - Show this help
-            q/Esc       - Quit application
-
-            Output View:
-            ↑/k         - Scroll up
-            ↓/j         - Scroll down
-            Any other   - Return to script list
-
-            General:
-            All commands are case-sensitive
-            Navigation uses vim-style keys (j/k) or arrows
-        ";
-
-        let help = Paragraph::new(help_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(
-                        Style::default().fg(Color::Yellow)
-                    )
-            )
-            .style(Style::default().fg(Color::White));
-        f.render_widget(help, chunks[1]);
-        
-        // Footer
-        let footer = Paragraph::new("Press any key to close")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(
-                        Style::default().fg(Color::Yellow)
-                    )
-            )
-            .style(Style::default().fg(Color::Gray));
-        f.render_widget(footer, chunks[2]);
+    fn next(&mut self) {
+        if self.selected_index < 
+           self.scripts.len().saturating_sub(1) {
+            self.selected_index += 1;
+        }
     }
+    
+    fn previous(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+    
+    fn quit(&mut self) {
+        self.should_quit = true;
+    }
+    
     fn scroll_output_up(&mut self) {
-        if self.output_scroll > 0 { 
+        if self.output_scroll > 0 {
             self.output_scroll -= 1;
         }
     }
-
+    
     fn scroll_output_down(&mut self, max_scroll: usize) {
         if self.output_scroll < max_scroll {
             self.output_scroll += 1;
         }
     }
-
+    
+    fn show_help(&mut self) {
+        self.showing_help = true;
+    }
+    
+    fn hide_help(&mut self) {
+        self.showing_help = false;
+    }
+    
+    fn run_selected_script(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<(), io::Error> {
+        let script = &self.scripts[self.selected_index];
+        
+        self.output_text = "Running script...\n\n\
+            Please wait...".to_string();
+        self.viewing_output = true;
+        
+        terminal.draw(|f| {
+            render_output_view(f, self);
+        })?;
+        
+        let output = Command::new(&script.path).output()?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let code = output.status.code().unwrap_or(-1);
+        
+        self.output_text = if code == 0 {
+            format!(
+                "✓ Script completed successfully\n\
+                 Exit code: 0\n\n\
+                 === OUTPUT ===\n{}\n\n\
+                 === ERRORS ===\n{}",
+                if stdout.is_empty() { 
+                    "(no output)" 
+                } else { 
+                    stdout.as_ref() 
+                },
+                if stderr.is_empty() { 
+                    "(none)" 
+                } else { 
+                    stderr.as_ref() 
+                }
+            )
+        } else {
+            format!(
+                "✗ Script failed\n\
+                 Exit code: {}\n\n\
+                 === OUTPUT ===\n{}\n\n\
+                 === ERRORS ===\n{}",
+                code,
+                if stdout.is_empty() { 
+                    "(no output)" 
+                } else { 
+                    stdout.as_ref() 
+                },
+                if stderr.is_empty() { 
+                    "(none)" 
+                } else { 
+                    stderr.as_ref() 
+                }
+            )
+        };
+        
+        Ok(())
+    }
+    
     fn back_to_list(&mut self) {
         self.viewing_output = false;
         self.output_text.clear();
         self.output_scroll = 0;
-    }
-
-
-    fn next(&mut self) {
-        // move selection down
-        if self.selected_index < self.scripts.len() - 1 {
-            self.selected_index += 1;
-        }
-    }
-
-    fn previous(&mut self) {
-        // move selection up
-        if self.selected_index > 0 {
-            self.selected_index -= 1;
-        }
-    }
-
-    fn quit(&mut self) {
-        self.should_quit = true;
     }
 }
 
