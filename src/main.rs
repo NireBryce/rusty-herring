@@ -610,6 +610,40 @@ fn render_output_view(
     f.render_widget(footer, chunks[2]);
 }
 
+fn run_selected_script(
+    &mut self,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) -> Result<(), io::Error> {
+    let script = &self.scripts[self.selected_index];
+    
+    // Show loading screen
+    self.output_text = "Running script...\n\n\
+        Please wait...".to_string();
+    self.viewing_output = true;
+    
+    // Redraw to show the loading message
+    terminal.draw(|f| {
+        render_output_view(f, self);
+    })?;
+    
+    // Now run the script
+    let output = Command::new(&script.path).output()?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Update with actual output
+    self.output_text = format!(
+        "=== STDOUT ===\n{}\n\n=== STDERR ===\n{}\n\n\
+         Exit code: {}",
+        stdout,
+        stderr,
+        output.status.code().unwrap_or(-1)
+    );
+    
+    Ok(())
+}
+
 
 fn main() -> Result<(), io::Error> {
     let args: Vec<String> = env::args().collect();
