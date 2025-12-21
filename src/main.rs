@@ -508,8 +508,10 @@ fn run_app(
                     app.previous();
                 }
                 KeyCode::Enter => {
-                    // for now, quit, eventually, execute
-                    app.quit();
+                    if let Err(e) = app.run_selected_script(&mut terminal) {
+                        app.output_text = format!("Error:\n{}", e);
+                        app.viewing_output = true;
+                    }
                 }
                 _ => {}
             }
