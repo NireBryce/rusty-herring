@@ -1,3 +1,9 @@
+use std::env;
+use std::fs;
+use std::io::{self, BufRead};
+use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
+
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -15,6 +21,23 @@ use crossterm::{
     },
     execute,
 };
+
+#[derive(Debug)]
+struct Script {
+    path: String,
+    name: String,
+    description: Option<String>,
+}
+
+struct App {
+    scripts: Vec<Script>,
+    selected_index: usize,
+    should_quit: bool,
+    viewing_output: bool,
+    output_text: String,
+    output_scroll: usize,
+    showing_help: bool,
+}
 
 #[derive(Debug)]
 struct Script {
