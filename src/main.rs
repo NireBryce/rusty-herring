@@ -525,10 +525,19 @@ fn run_app(
 fn render_output_view(
     f: &mut ratatui::Frame,
     app: &App,
-){
+) {
     let size = f.size();
-    let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3),]).split(size);
-
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
+        .split(size);
+    
+    // Title
     let script_name = &app.scripts[app.selected_index].name;
     let title = Paragraph::new(
         format!("Output: {}", script_name)
@@ -537,8 +546,9 @@ fn render_output_view(
             Block::default()
                 .borders(Borders::ALL)
                 .title("Script Output")
-                .border_style(Style::default().fg(Color::Green)
-            )
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
         );
     f.render_widget(title, chunks[0]);
     
@@ -555,14 +565,14 @@ fn render_output_view(
     // Calculate max scroll
     let max_scroll = total_lines
         .saturating_sub(visible_height);
-
+    
     // Get the visible slice of lines
     let start = app.output_scroll;
     let end = (start + visible_height).min(total_lines);
     let visible_lines: Vec<&str> = lines[start..end]
         .to_vec();
-
-     // Join back into a single string
+    
+    // Join back into a single string
     let display_text = visible_lines.join("\n");
     
     let output = Paragraph::new(display_text)
@@ -575,7 +585,7 @@ fn render_output_view(
         )
         .style(Style::default().fg(Color::White));
     f.render_widget(output, chunks[1]);
-
+    
     // Footer with scroll indicator
     let scroll_info = if total_lines > visible_height {
         format!(
@@ -587,8 +597,8 @@ fn render_output_view(
     } else {
         "Press any key to go back".to_string()
     };
-
-     let footer = Paragraph::new(scroll_info)
+    
+    let footer = Paragraph::new(scroll_info)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -599,7 +609,6 @@ fn render_output_view(
         .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[2]);
 }
-
 
 
 fn main() -> Result<(), io::Error> {
