@@ -156,7 +156,7 @@ impl App {
     }
 }
 
-// guard to ensure terminal cleanup
+
 struct TerminalGuard;
 
 impl Drop for TerminalGuard {
@@ -166,80 +166,84 @@ impl Drop for TerminalGuard {
     }
 }
 
-fn extract_description(path: &str) -> Result<Option<String>, io::Error> {
+fn extract_description(
+    path: &str
+) -> Result<Option<String>, io::Error> {
     let file = fs::File::open(path)?;
     let reader = io::BufReader::new(file);
-
+    
     for line_result in reader.lines() {
         let line = line_result?;
         let trimmed = line.trim();
-
-        if trimmed.is_empty() {
+        
+        if trimmed.is_empty() || trimmed.starts_with("#!") {
             continue;
         }
-        if trimmed.starts_with("#!") {
-            continue;
-        }
-
-        let description = if let Some(desc) = trimmed.strip_prefix('#') {
-            Some(desc)
-        } else if let Some(desc) = trimmed.strip_prefix("//") {
-            Some(desc)
-        } else if let Some(desc) = trimmed.strip_prefix("--") {
-            Some(desc)
+        
+        let desc = if let Some(d) = trimmed.strip_prefix('#') {
+            Some(d)
+        } else if let Some(d) = trimmed.strip_prefix("//") {
+            Some(d)
+        } else if let Some(d) = trimmed.strip_prefix("--") {
+            Some(d)
         } else {
             None
         };
-
-        if let Some(desc) = description {
-            let cleaned = desc.trim().to_string();
+        
+        if let Some(d) = desc {
+            let cleaned = d.trim().to_string();
             if !cleaned.is_empty() {
                 return Ok(Some(cleaned));
             }
             continue;
         }
-
+        
         break;
     }
-
+    
     Ok(None)
 }
 
-fn scan_directory(directory: &str) -> Result<Vec<Script>, io::Error> {
+fn scan_directory(
+    directory: &str
+) -> Result<Vec<Script>, io::Error> {
     let entries = fs::read_dir(directory)?;
-    let mut scripts: Vec<Script> = Vec::new();
-
+    let mut scripts = Vec::new();
+    
     for entry_result in entries {
         let entry = entry_result?;
         let path = entry.path();
-
+        
         if path.is_dir() {
             continue;
         }
-
+        
         let metadata = fs::metadata(&path)?;
         let permissions = metadata.permissions();
-
+        
         if permissions.mode() & 0o111 != 0 {
             let name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-
-            let path_str = path.to_str().unwrap_or("").to_string();
-
-            let description = extract_description(&path_str).unwrap_or(None);
-
-            let script = Script {
+            
+            let path_str = path
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            
+            let description = extract_description(&path_str)
+                .unwrap_or(None);
+            
+            scripts.push(Script {
                 path: path_str,
                 name,
                 description,
-            };
-
-            scripts.push(script);
+            });
         }
     }
+    
     Ok(scripts)
 }
 fn render_list_view(
