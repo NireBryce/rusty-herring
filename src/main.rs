@@ -30,6 +30,7 @@ struct App {
     viewing_output: bool,
     output_text: String,
     output_scroll: usize,
+    showing_help: bool,
 }
 
 impl App {
@@ -41,9 +42,82 @@ impl App {
             viewing_output: false,
             output_text: String::new(),
             output_scroll: 0,
+            showing_help: false,
         }
     }
 
+    fn show_help(&mut self) {
+        self.showing_help = true;
+    }
+
+    fn hide_help(&mut self) {
+        self.showing_help = false;
+    }
+
+    fn render_help_view(f: &mut ratatui::Frame) {
+        let size = f.size();
+
+        let chunks = { 
+            Layout::default()
+                .direction(Direction::Vertical)
+                .Constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3),])
+                .split(size)
+        };
+        let title = { 
+            Paragraph::new("Keyboard Shortcuts")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Help")
+                    .border_style(
+                        Style::default().fg(Color::Yellow)
+                    )
+            )
+        };
+        f.render_widget(title, chunks[0]);
+    
+        // Help content
+        let help_text = "\
+            Script List View:
+            ↑/k         - Move selection up
+            ↓/j         - Move selection down
+            Enter       - Run selected script
+            ?           - Show this help
+            q/Esc       - Quit application
+
+            Output View:
+            ↑/k         - Scroll up
+            ↓/j         - Scroll down
+            Any other   - Return to script list
+
+            General:
+            All commands are case-sensitive
+            Navigation uses vim-style keys (j/k) or arrows
+        ";
+
+        let help = Paragraph::new(help_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(
+                        Style::default().fg(Color::Yellow)
+                    )
+            )
+            .style(Style::default().fg(Color::White));
+        f.render_widget(help, chunks[1]);
+        
+        // Footer
+        let footer = Paragraph::new("Press any key to close")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(
+                        Style::default().fg(Color::Yellow)
+                    )
+            )
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(footer, chunks[2]);
+    }
     fn scroll_output_up(&mut self) {
         if self.output_scroll > 0 { 
             self.output_scroll -= 1;
