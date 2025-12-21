@@ -27,6 +27,9 @@ struct App {
     scripts: Vec<Script>,
     selected_index: usize, // which script is selected
     should_quit: bool,     // exit flag
+    viewing_output: bool,
+    output_text: String,
+    output_scroll: usize,
 }
 
 impl App {
@@ -35,8 +38,30 @@ impl App {
             scripts,
             selected_index: 0,
             should_quit: false,
+            viewing_output: false,
+            output_text: String::new(),
+            output_scroll: 0,
         }
     }
+
+    fn scroll_output_up(&mut self) {
+        if self.output_scroll > 0 { 
+            self.output_scroll -= 1;
+        }
+    }
+
+    fn scroll_output_down(&mut self, max_scroll: usize) {
+        if self.output_scroll < max_scroll {
+            self.output_scroll += 1;
+        }
+    }
+
+    fn back_to_list(&mut self) {
+        self.viewing_output = false;
+        self.output_text.clear();
+        self.output_scroll = 0;
+    }
+
 
     fn next(&mut self) {
         // move selection down
@@ -251,6 +276,86 @@ fn run_app(
     }
     Ok(())
 }
+
+fn render_output_view(
+    f: &mut ratatui::Frame,
+    app: &App,
+){
+    let size = f.size();
+    let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3),]).split(size);
+
+    let script_name = &app.scripts[app.selected_index].name;
+    let title = Paragraph::new(
+        format!("Output: {}", script_name)
+    )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Script Output")
+                .border_style(Style::default().fg(Color::Green)
+            )
+        );
+    f.render_Widget(title, chunks[0]);
+    
+    // Calculate how many lines we can show
+    // -2 for the borders
+    let visible_height = chunks[1].height as usize - 2;
+    
+    // Split output into lines
+    let lines: Vec<&str> = app.output_text
+        .lines()
+        .collect();
+    let total_lines = lines.len();
+    
+    // Calculate max scroll
+    let max_scroll = total_lines
+        .saturating_sub(visible_height);
+
+    // Get the visible slice of lines
+    let start = app.output_scroll;
+    let end = (start + visible_height).min(total_lines);
+    let visible_lines: Vec<&str> = lines[start..end]
+        .to_vec();
+
+     // Join back into a single string
+    let display_text = visible_lines.join("\n");
+    
+    let output = Paragraph::new(display_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
+        )
+        .style(Style::default().fg(Color::White));
+    f.render_widget(output, chunks[1]);
+
+    // Footer with scroll indicator
+    let scroll_info = if total_lines > visible_height {
+        format!(
+            "↑/↓: Scroll | Lines {}-{} of {} | Any other key: Back",
+            start + 1,
+            end,
+            total_lines
+        )
+    } else {
+        "Press any key to go back".to_string()
+    };
+
+     let footer = Paragraph::new(scroll_info)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(Color::Green)
+                )
+        )
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(footer, chunks[2]);
+}
+
+
 
 fn main() -> Result<(), io::Error> {
     let args: Vec<String> = env::args().collect();
