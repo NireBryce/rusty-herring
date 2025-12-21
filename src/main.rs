@@ -464,287 +464,76 @@ fn run_app(
     mut app: App,
 ) -> Result<(), io::Error> {
     loop {
-        // draw the UI
         terminal.draw(|f| {
-            let size = f.size();
-            
-            let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(0),
-                Constraint::Length(3),
-            ])
-            .split(size);
-        let title_text = format!(
-            "script Runner - {} scripts",
-            app.scripts.len()
-        );
-
-        let title = Paragraph::new(title_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Scripts")
-                    .border_style(
-                        Style::default().fg(Color::Cyan)
-                    )
-            );
-        f.render_widget(title, chunks[0]);
-
-        // script list
-
-        let items: Vec<ListItem> = app.scripts
-            .iter()
-            .enumerate()
-            .map(|(i, script)|{
-                let name_line = if i == app.selected_index {
-                    format !("> {}", script.name)
-                } else {
-                    format!("  {}", script.name)
-                };
-
-                let lines = if let Some(desc) = &script.description {
-                    vec![name_line, format!("   {}", desc)]
-                } else {
-                    vec![name_line]
-                };
-
-                let style = if i == app.selected_index {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                
-                ListItem::new(lines.join("\n")).style(style)
-            }).collect();
-
-        let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Available Scripts")
-                        .border_style(
-                            Style::default().fg(Color::Cyan)
-                        )
-                );
-            f.render_widget(list, chunks[1]);
-        
-        let footer = Paragraph::new("Use arrow keys to navigate and press enter to run a script")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan))
-            )
-            .style(Style::default().fg(Color::Gray));
-        f.render_widget(footer, chunks[2]); 
-        
-        })?;
-
-    //handle input
-    if event::poll(std::time::Duration::from_millis(100))? {
-        // In run_app, inside the input handling:
-
-        if let Event::Key(key) = event::read()? {
-            if app.viewing_output {
-                // Calculate max scroll for bounds checking
-                let lines: Vec<&str> = app.output_text
-                    .lines()
-                    .collect();
-                let total = lines.len();
-                
-                // This is approximate, but good enough
-                let visible = 20;  
-
-                //  Calculate max scroll each time because the terminal might 
-                //    resize.  In a production app, we'd cache this, but for 
-                //    simplicity, just recalculate. 
-                let max_scroll = total.saturating_sub(visible);
-                
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        app.scroll_output_up();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        app.scroll_output_down(max_scroll);
-                    }
-                    _ => {
-                        app.back_to_list();
-                    }
-                }
+            if app.showing_help {
+                render_help_view(f);
+            } else if app.viewing_output {
+                render_output_view(f, &app);
+            } else {
+                render_list_view(f, &app);
             }
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    app.quit();
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    app.next();
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    app.previous();
-                }
-                KeyCode::Enter => {
-                    if let Err(e) = app.run_selected_script(&mut terminal) {
-                        app.output_text = format!("Error:\n{}", e);
-                        app.viewing_output = true;
+        })?;
+        
+        if event::poll(
+            std::time::Duration::from_millis(100)
+        )? {
+            if let Event::Key(key) = event::read()? {
+                if app.showing_help {
+                    app.hide_help();
+                } else if app.viewing_output {
+                    let lines: Vec<&str> = app.output_text
+                        .lines()
+                        .collect();
+                    let total = lines.len();
+                    let visible = 20;
+                    let max = total.saturating_sub(visible);
+                    
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            app.scroll_output_up();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            app.scroll_output_down(max);
+                        }
+                        _ => {
+                            app.back_to_list();
+                        }
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Char('?') => {
+                            app.show_help();
+                        }
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            app.quit();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            app.next();
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            app.previous();
+                        }
+                        KeyCode::Enter => {
+                            if let Err(e) = 
+                                app.run_selected_script(terminal) 
+                            {
+                                app.output_text = format!(
+                                    "✗ Error running script:\n{}",
+                                    e
+                                );
+                                app.viewing_output = true;
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                _ => {}
             }
         }
-
-        if app.should_quit{
+        
+        if app.should_quit {
             break;
         }
     }
-    Ok(())
-}
-
-fn render_output_view(
-    f: &mut ratatui::Frame,
-    app: &App,
-) {
-    let size = f.size();
-    
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(size);
-    
-    // Title
-    let script_name = &app.scripts[app.selected_index].name;
-    let title = Paragraph::new(
-        format!("Output: {}", script_name)
-    )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Script Output")
-                .border_style(
-                    Style::default().fg(Color::Green)
-                )
-        );
-    f.render_widget(title, chunks[0]);
-    
-    // Calculate how many lines we can show
-    // -2 for the borders
-    let visible_height = chunks[1].height as usize - 2;
-    
-    // Split output into lines
-    let lines: Vec<&str> = app.output_text
-        .lines()
-        .collect();
-    let total_lines = lines.len();
-    
-    // Calculate max scroll
-    let max_scroll = total_lines
-        .saturating_sub(visible_height);
-    
-    // Get the visible slice of lines
-    let start = app.output_scroll;
-    let end = (start + visible_height).min(total_lines);
-    let visible_lines: Vec<&str> = lines[start..end]
-        .to_vec();
-    
-    // Join back into a single string
-    let display_text = visible_lines.join("\n");
-    
-    let output = Paragraph::new(display_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(
-                    Style::default().fg(Color::Green)
-                )
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(output, chunks[1]);
-    
-    // Footer with scroll indicator
-    let scroll_info = if total_lines > visible_height {
-        format!(
-            "↑/↓: Scroll | Lines {}-{} of {} | Any other key: Back",
-            start + 1,
-            end,
-            total_lines
-        )
-    } else {
-        "Press any key to go back".to_string()
-    };
-    
-    let footer = Paragraph::new(scroll_info)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(
-                    Style::default().fg(Color::Green)
-                )
-        )
-        .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
-}
-
-fn run_selected_script(
-    &mut self,
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-) -> Result<(), io::Error> {
-    let script = &self.scripts[self.selected_index];
-    
-    self.output_text = "Running script...\n\n\
-        Please wait...".to_string();
-    self.viewing_output = true;
-    
-    terminal.draw(|f| {
-        render_output_view(f, self);
-    })?;
-    
-    let output = Command::new(&script.path).output()?;
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let exit_code = output.status.code().unwrap_or(-1);
-    
-    // Format based on success/failure
-    self.output_text = if exit_code == 0 {
-        format!(
-            "✓ Script completed successfully\n\
-             Exit code: 0\n\n\
-             === OUTPUT ===\n{}\n\n\
-             === ERRORS ===\n{}",
-            if stdout.is_empty() { 
-                "(no output)" 
-            } else { 
-                stdout.as_ref() 
-            },
-            if stderr.is_empty() { 
-                "(none)" 
-            } else { 
-                stderr.as_ref() 
-            }
-        )
-    } else {
-        format!(
-            "✗ Script failed\n\
-             Exit code: {}\n\n\
-             === OUTPUT ===\n{}\n\n\
-             === ERRORS ===\n{}",
-            exit_code,
-            if stdout.is_empty() { 
-                "(no output)" 
-            } else { 
-                stdout.as_ref() 
-            },
-            if stderr.is_empty() { 
-                "(none)" 
-            } else { 
-                stderr.as_ref() 
-            }
-        )
-    };
     
     Ok(())
 }
