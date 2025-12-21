@@ -39,21 +39,6 @@ struct App {
     showing_help: bool,
 }
 
-#[derive(Debug)]
-struct Script {
-    path: String,
-    name: String,
-    description: Option<String>,
-}
-
-struct App {
-    scripts: Vec<Script>,
-    selected_index: usize,
-    should_quit: bool,
-    viewing_output: bool,
-    output_text: String,
-}
-
 impl App {
     fn new(scripts: Vec<Script>) -> App {
         App {
