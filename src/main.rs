@@ -383,6 +383,9 @@ fn render_output_view(
     f.render_widget(footer, chunks[2]);
 }
 
+
+
+
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     mut app: App,
@@ -618,30 +621,57 @@ fn run_selected_script(
 ) -> Result<(), io::Error> {
     let script = &self.scripts[self.selected_index];
     
-    // Show loading screen
     self.output_text = "Running script...\n\n\
         Please wait...".to_string();
     self.viewing_output = true;
     
-    // Redraw to show the loading message
     terminal.draw(|f| {
         render_output_view(f, self);
     })?;
     
-    // Now run the script
     let output = Command::new(&script.path).output()?;
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
     
-    // Update with actual output
-    self.output_text = format!(
-        "=== STDOUT ===\n{}\n\n=== STDERR ===\n{}\n\n\
-         Exit code: {}",
-        stdout,
-        stderr,
-        output.status.code().unwrap_or(-1)
-    );
+    // Format based on success/failure
+    self.output_text = if exit_code == 0 {
+        format!(
+            "✓ Script completed successfully\n\
+             Exit code: 0\n\n\
+             === OUTPUT ===\n{}\n\n\
+             === ERRORS ===\n{}",
+            if stdout.is_empty() { 
+                "(no output)" 
+            } else { 
+                stdout.as_ref() 
+            },
+            if stderr.is_empty() { 
+                "(none)" 
+            } else { 
+                stderr.as_ref() 
+            }
+        )
+    } else {
+        format!(
+            "✗ Script failed\n\
+             Exit code: {}\n\n\
+             === OUTPUT ===\n{}\n\n\
+             === ERRORS ===\n{}",
+            exit_code,
+            if stdout.is_empty() { 
+                "(no output)" 
+            } else { 
+                stdout.as_ref() 
+            },
+            if stderr.is_empty() { 
+                "(none)" 
+            } else { 
+                stderr.as_ref() 
+            }
+        )
+    };
     
     Ok(())
 }
