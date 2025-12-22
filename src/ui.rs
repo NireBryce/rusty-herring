@@ -3,14 +3,14 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use crate::app::App;
+use crate::App;
 
 pub fn render_list_view(
     f: &mut ratatui::Frame,
     app: &App,
 ) {
     let size = f.size();
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,73 +19,78 @@ pub fn render_list_view(
             Constraint::Length(3),
         ])
         .split(size);
-    
+
     let title = Paragraph::new(
-        format!(
-            "Script Runner - {} scripts",
-            app.scripts.len()
-        )
+        format!("Script Runner - {} scripts", app.scripts.len())
     )
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title("Scripts")
-                .border_style(
-                    Style::default().fg(Color::Cyan)
-                )
+                .border_style(Style::default().fg(Color::Cyan))
         );
     f.render_widget(title, chunks[0]);
-    
-    let items: Vec<ListItem> = app.scripts
-        .iter()
-        .enumerate()
-        .map(|(i, script)| {
-            let prefix = if i == app.selected_index {
-                "▶"
-            } else {
-                " "
+
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut current_category: Option<&Option<String>> = None;
+
+    for (i, script) in app.scripts.iter().enumerate() {
+        // Add category header if category changed
+        if current_category != Some(&script.category) {
+            current_category = Some(&script.category);
+            let header = match &script.category {
+                Some(cat) => format!("── {} ──", cat),
+                None => "── Uncategorized ──".to_string(),
             };
-            
-            let name = format!("{} {}", prefix, script.name);
-            
-            let lines = if let Some(d) = &script.description {
-                vec![name, format!("    {}", d)]
-            } else {
-                vec![name]
-            };
-            
-            let style = if i == app.selected_index {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            
-            ListItem::new(lines.join("\n")).style(style)
-        })
-        .collect();
-    
+            items.push(
+                ListItem::new(header)
+                    .style(Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD))
+            );
+        }
+
+        let prefix = if i == app.selected_index {
+            "▶"
+        } else {
+            " "
+        };
+
+        let name = format!("{} {}", prefix, script.name);
+
+        let lines = if let Some(d) = &script.description {
+            vec![name, format!("    {}", d)]
+        } else {
+            vec![name]
+        };
+
+        let style = if i == app.selected_index {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        items.push(ListItem::new(lines.join("\n")).style(style));
+    }
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title("Available Scripts")
-                .border_style(
-                    Style::default().fg(Color::Cyan)
-                )
+                .border_style(Style::default().fg(Color::Cyan))
         );
     f.render_widget(list, chunks[1]);
-    
+
     let footer = Paragraph::new(
         "↑/↓: Navigate | Enter: Run | ?: Help | q: Quit"
     )
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(
-                    Style::default().fg(Color::Cyan)
-                )
+                .border_style(Style::default().fg(Color::Cyan))
         )
         .style(Style::default().fg(Color::Gray));
     f.render_widget(footer, chunks[2]);

@@ -6,9 +6,6 @@ use std::process::Command;
 
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
     Terminal,
 };
 use crossterm::{
@@ -22,11 +19,14 @@ use crossterm::{
     execute,
 };
 
+mod ui;
+
 #[derive(Debug)]
 struct Script {
     path: String,
     name: String,
     description: Option<String>,
+    category: Option<String>,
 }
 
 struct App {
@@ -100,7 +100,7 @@ impl App {
         self.viewing_output = true;
         
         terminal.draw(|f| {
-            render_output_view(f, self);
+            ui::render_output_view(f, self);
         })?;
         
         let output = Command::new(&script.path).output()?;
@@ -207,258 +207,67 @@ fn extract_description(
 fn scan_directory(
     directory: &str
 ) -> Result<Vec<Script>, io::Error> {
-    let entries = fs::read_dir(directory)?;
     let mut scripts = Vec::new();
-    
+    scan_directory_recursive(directory, None, &mut scripts)?;
+    Ok(scripts)
+}
+
+fn scan_directory_recursive(
+    directory: &str,
+    category: Option<String>,
+    scripts: &mut Vec<Script>,
+) -> Result<(), io::Error> {
+    let entries = fs::read_dir(directory)?;
+
     for entry_result in entries {
         let entry = entry_result?;
         let path = entry.path();
-        
+
         if path.is_dir() {
+            let subdir_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let path_str = path
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+
+            scan_directory_recursive(&path_str, Some(subdir_name), scripts)?;
             continue;
         }
-        
+
         let metadata = fs::metadata(&path)?;
         let permissions = metadata.permissions();
-        
+
         if permissions.mode() & 0o111 != 0 {
             let name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
+
             let path_str = path
                 .to_str()
                 .unwrap_or("")
                 .to_string();
-            
+
             let description = extract_description(&path_str)
                 .unwrap_or(None);
-            
+
             scripts.push(Script {
                 path: path_str,
                 name,
                 description,
+                category: category.clone(),
             });
         }
     }
-    
-    Ok(scripts)
+
+    Ok(())
 }
-fn render_list_view(
-    f: &mut ratatui::Frame,
-    app: &App,
-) {
-    let size = f.size();
-    
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(size);
-    
-    let title = Paragraph::new(
-        format!("Script Runner - {} scripts", app.scripts.len())
-    )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Scripts")
-                .border_style(Style::default().fg(Color::Cyan))
-        );
-    f.render_widget(title, chunks[0]);
-    
-    let items: Vec<ListItem> = app.scripts
-        .iter()
-        .enumerate()
-        .map(|(i, script)| {
-            let prefix = if i == app.selected_index {
-                "▶"
-            } else {
-                " "
-            };
-            
-            let name = format!("{} {}", prefix, script.name);
-            
-            let lines = if let Some(d) = &script.description {
-                vec![name, format!("    {}", d)]
-            } else {
-                vec![name]
-            };
-            
-            let style = if i == app.selected_index {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            
-            ListItem::new(lines.join("\n")).style(style)
-        })
-        .collect();
-    
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Available Scripts")
-                .border_style(Style::default().fg(Color::Cyan))
-        );
-    f.render_widget(list, chunks[1]);
-    
-    let footer = Paragraph::new(
-        "↑/↓: Navigate | Enter: Run | ?: Help | q: Quit"
-    )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-        )
-        .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
-}
-
-fn render_output_view(
-    f: &mut ratatui::Frame,
-    app: &App,
-) {
-    let size = f.size();
-    
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(size);
-    
-    let is_success = app.output_text.starts_with("✓");
-    let color = if is_success {
-        Color::Green
-    } else if app.output_text.starts_with("✗") {
-        Color::Red
-    } else {
-        Color::Yellow
-    };
-    
-    let script_name = &app.scripts[app.selected_index].name;
-    let title = Paragraph::new(
-        format!("Output: {}", script_name)
-    )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Script Output")
-                .border_style(Style::default().fg(color))
-        );
-    f.render_widget(title, chunks[0]);
-    
-    let visible_height = chunks[1].height as usize - 2;
-    let lines: Vec<&str> = app.output_text
-        .lines()
-        .collect();
-    let total = lines.len();
-    
-    let start = app.output_scroll;
-    let end = (start + visible_height).min(total);
-    let visible: Vec<&str> = lines[start..end].to_vec();
-    
-    let output = Paragraph::new(visible.join("\n"))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(color))
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(output, chunks[1]);
-    
-    let footer_text = if total > visible_height {
-        format!(
-            "↑/↓: Scroll | Lines {}-{} of {} | \
-             Other: Back",
-            start + 1,
-            end,
-            total
-        )
-    } else {
-        "Press any key to go back".to_string()
-    };
-    
-    let footer = Paragraph::new(footer_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(color))
-        )
-        .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
-}
-
-fn render_help_view(f: &mut ratatui::Frame) {
-    let size = f.size();
-    
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(size);
-    
-    let title = Paragraph::new("Keyboard Shortcuts")
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Help")
-                .border_style(Style::default().fg(Color::Yellow))
-        );
-    f.render_widget(title, chunks[0]);
-    
-    let help_text = "\
-Script List View:
-  ↑/k         - Move selection up
-  ↓/j         - Move selection down
-  Enter       - Run selected script
-  ?           - Show this help
-  q/Esc       - Quit application
-
-Output View:
-  ↑/k         - Scroll up
-  ↓/j         - Scroll down
-  Any other   - Return to script list
-
-General:
-  All commands are case-sensitive
-  Navigation uses vim keys (j/k) or arrows";
-    
-    let help = Paragraph::new(help_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(help, chunks[1]);
-    
-    let footer = Paragraph::new("Press any key to close")
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
-        )
-        .style(Style::default().fg(Color::Gray));
-    f.render_widget(footer, chunks[2]);
-}
-
-
-
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     mut app: App,
@@ -466,11 +275,11 @@ fn run_app(
     loop {
         terminal.draw(|f| {
             if app.showing_help {
-                render_help_view(f);
+                ui::render_help_view(f);
             } else if app.viewing_output {
-                render_output_view(f, &app);
+                ui::render_output_view(f, &app);
             } else {
-                render_list_view(f, &app);
+                ui::render_list_view(f, &app);
             }
         })?;
         

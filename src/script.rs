@@ -7,6 +7,7 @@ pub struct Script {
     pub path: String,
     pub name: String,
     pub description: Option<String>,
+    pub category: Option<String>,
 }
 
 pub fn extract_description(
